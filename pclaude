@@ -1,0 +1,64 @@
+#!/bin/bash
+
+if [[ "$PWD" != "$HOME/src"* ]]; then
+    echo "Error: must be run from within ~/src/" >&2
+    exit 1
+fi
+
+# Check for updates weekly, or build if image missing
+STAMP="$HOME/.claude-container/.last-build"
+IMAGE_EXISTS=$(podman image exists claude-code 2>/dev/null && echo 1 || echo 0)
+if [[ "$IMAGE_EXISTS" == "0" ]] || [[ ! -f "$STAMP" ]] || [[ $(( $(date +%s) - $(stat -c %Y "$STAMP") )) -gt 604800 ]]; then
+    CURRENT=$(podman run --rm --entrypoint claude claude-code --version 2>/dev/null | head -1 | awk '{print $1}')
+    LATEST=$(podman run --rm --entrypoint npm claude-code view @anthropic-ai/claude-code version 2>/dev/null)
+
+    if [[ -z "$CURRENT" ]]; then
+        echo "Claude Code container image not found, building..."
+        REBUILD=1
+    fi
+
+    if [[ -z "$LATEST" && "$REBUILD" == "1" ]]; then
+        # No image to check npm from, build with default version
+        true
+    elif [[ -n "$LATEST" && -n "$CURRENT" && "$CURRENT" != "$LATEST" ]]; then
+        echo "Claude Code update available: $CURRENT -> $LATEST"
+        read -p "Update? [Y/n] " -n 1 -r
+        echo
+        [[ ! $REPLY =~ ^[Nn]$ ]] && REBUILD=1
+    fi
+
+    if [[ "$REBUILD" == "1" ]]; then
+        VERSION="${LATEST:-2.1.83}"
+        if podman build --pull --no-cache \
+            --build-arg "CLAUDE_VERSION=$VERSION" \
+            -t claude-code "$HOME/src/claude-container/"; then
+            touch "$STAMP"
+        else
+            echo "Warning: rebuild failed, using existing image" >&2
+        fi
+    else
+        touch "$STAMP"
+    fi
+fi
+
+# GitHub fine-grained token required for gh,
+# "Public repositories (read-only)", no extra permissions
+# GIT_CONFIG_* rewrites git SSH URLs to HTTPS (no SSH keys in container)
+exec podman run -it --rm \
+    --security-opt label=disable \
+    -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-1}" \
+    -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:?Set ANTHROPIC_VERTEX_PROJECT_ID}" \
+    -e CLOUD_ML_REGION="${CLOUD_ML_REGION:?Set CLOUD_ML_REGION}" \
+    -e TERM="$TERM" \
+    -e GH_TOKEN="$(cat "$HOME/.claude-container/.gh-token" 2>/dev/null)" \
+    -e GIT_CONFIG_COUNT=1 \
+    -e "GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf" \
+    -e "GIT_CONFIG_VALUE_0=git@github.com:" \
+    -v "$HOME/.config/gcloud/application_default_credentials.json:/root/.config/gcloud/application_default_credentials.json:ro" \
+    -v "$HOME/src:$HOME/src" \
+    -v "$HOME/.claude-container:/root/.claude" \
+    -v "$HOME/src/claude-container/commands:/root/.claude/commands:ro" \
+    -v "$HOME/.claude-container/.claude.json:/root/.claude.json" \
+    -v "$HOME/.gitconfig:/root/.gitconfig:ro" \
+    -w "$PWD" \
+    claude-code "$@"
