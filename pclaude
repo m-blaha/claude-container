@@ -46,6 +46,7 @@ fi
 # GIT_CONFIG_* rewrites git SSH URLs to HTTPS (no SSH keys in container)
 exec podman run -it --rm \
     --security-opt label=disable \
+    --sysctl net.ipv6.conf.all.disable_ipv6=1 \
     -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-1}" \
     -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:?Set ANTHROPIC_VERTEX_PROJECT_ID}" \
     -e CLOUD_ML_REGION="${CLOUD_ML_REGION:?Set CLOUD_ML_REGION}" \
