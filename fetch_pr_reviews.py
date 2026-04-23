@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 # === Configuration ===
 REPOS = ["rpm-software-management/dnf5"]
-PR_LIMIT = 200  # Total PRs to fetch (script will paginate as needed)
+PR_LIMIT = 500  # Total PRs to fetch (script will paginate as needed)
 PR_LIST_PAGE_SIZE = 50  # PRs per GraphQL page (max ~50 to avoid API errors)
 GRAPHQL_BATCH_SIZE = 10  # Reviews fetched per GraphQL query
 BATCH_SLEEP = 0.5  # seconds between GraphQL batches
@@ -187,6 +187,11 @@ def build_graphql_query(owner: str, name: str, pr_numbers: list[int]) -> str:
               body
               path
               line
+              startLine
+              originalLine
+              originalStartLine
+              diffHunk
+              url
               author {{ login }}
             }}
           }}
@@ -291,7 +296,12 @@ def process_repo(repo: str) -> None:
                             "author": ic["author"]["login"] if ic.get("author") else None,
                             "body": ic["body"],
                             "path": ic["path"],
-                            "line": ic["line"],
+                            "line": ic.get("line"),
+                            "startLine": ic.get("startLine"),
+                            "originalLine": ic.get("originalLine"),
+                            "originalStartLine": ic.get("originalStartLine"),
+                            "diffHunk": ic.get("diffHunk", ""),
+                            "url": ic.get("url", ""),
                         }
                         for ic in r.get("comments", {}).get("nodes", [])
                     ],
