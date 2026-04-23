@@ -53,6 +53,7 @@ exec podman run -it --rm \
     -e TERM="$TERM" \
     -e GH_TOKEN="$(cat "$HOME/.claude-container/.gh-token" 2>/dev/null)" \
     -e GIT_CONFIG_COUNT=1 \
+    -e ANTHROPIC_MODEL="$ANTHROPIC_MODEL" \
     -e "GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf" \
     -e "GIT_CONFIG_VALUE_0=git@github.com:" \
     -v "$HOME/.config/gcloud/application_default_credentials.json:/root/.config/gcloud/application_default_credentials.json:ro" \
