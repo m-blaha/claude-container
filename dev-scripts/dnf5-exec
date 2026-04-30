@@ -1,0 +1,3 @@
+#!/bin/bash
+CONTAINER="${DNF5_DEV_CONTAINER:?not set}"
+podman --url unix:///run/podman.sock exec "$CONTAINER" "$@"

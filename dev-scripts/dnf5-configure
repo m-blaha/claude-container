@@ -1,0 +1,11 @@
+#!/bin/bash
+CONTAINER="${DNF5_DEV_CONTAINER:?not set}"
+SRC="${DNF5_SRC_DIR:?not set}"
+BUILD="$SRC/build-dev"
+
+podman --url unix:///run/podman.sock exec "$CONTAINER" \
+    cmake -S "$SRC" -B "$BUILD" \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DWITH_TESTS=ON \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+    "$@"

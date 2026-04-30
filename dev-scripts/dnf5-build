@@ -1,0 +1,6 @@
+#!/bin/bash
+CONTAINER="${DNF5_DEV_CONTAINER:?not set}"
+BUILD="${DNF5_SRC_DIR:?not set}/build-dev"
+
+podman --url unix:///run/podman.sock exec "$CONTAINER" \
+    make -C "$BUILD" -j"$(nproc)" "$@" 2>&1
