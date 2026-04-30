@@ -41,10 +41,72 @@ if [[ "$IMAGE_EXISTS" == "0" ]] || [[ ! -f "$STAMP" ]] || [[ $(( $(date +%s) - $
     fi
 fi
 
+# --- Dev container (auto-detected for dnf5 worktrees) ---
+DEV_CONTAINER=""
+DEV_ARGS=()
+
+if [[ "$PWD" == "$HOME/src/dnf5/"* ]]; then
+    WORKTREE=$(echo "$PWD" | sed "s|$HOME/src/dnf5/||" | cut -d/ -f1)
+    DNF5_SRC="$HOME/src/dnf5/$WORKTREE"
+
+    # Build dev image if needed (weekly rebuild)
+    DEV_STAMP="$HOME/.claude-container/.last-dev-build"
+    DEV_IMAGE_EXISTS=$(podman image exists dnf5-dev 2>/dev/null && echo 1 || echo 0)
+    if [[ "$DEV_IMAGE_EXISTS" == "0" ]] || [[ ! -f "$DEV_STAMP" ]] || [[ $(( $(date +%s) - $(stat -c %Y "$DEV_STAMP") )) -gt 604800 ]]; then
+        echo "Building dnf5 dev container image..."
+        if podman build --pull \
+            -f "$HOME/src/claude-container/Containerfile.dnf5-dev" \
+            -t dnf5-dev "$HOME/src/claude-container/"; then
+            touch "$DEV_STAMP"
+        else
+            echo "Warning: dev container build failed, proceeding without build support" >&2
+        fi
+    fi
+
+    # Clean up stale dev containers from crashed sessions (PID no longer running)
+    for stale in $(podman ps -a --filter "name=dnf5-dev-" --format "{{.Names}}" 2>/dev/null); do
+        stale_pid="${stale##dnf5-dev-}"
+        if ! kill -0 "$stale_pid" 2>/dev/null; then
+            echo "Cleaning up stale dev container: $stale"
+            podman rm -f "$stale" 2>/dev/null || true
+        fi
+    done
+
+    if podman image exists dnf5-dev 2>/dev/null; then
+        DEV_CONTAINER="dnf5-dev-$$"
+        echo "Starting dev container: $DEV_CONTAINER (source: $DNF5_SRC)"
+        podman run -d --rm \
+            --name "$DEV_CONTAINER" \
+            --security-opt label=disable \
+            -e "CCACHE_BASEDIR=$DNF5_SRC" \
+            -e "CCACHE_DIR=/root/.cache/ccache" \
+            -v "$HOME/src:$HOME/src" \
+            -v "$HOME/.cache/ccache:/root/.cache/ccache" \
+            dnf5-dev >/dev/null
+
+        PODMAN_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+
+        DEV_ARGS=(
+            -e "DNF5_DEV_CONTAINER=$DEV_CONTAINER"
+            -e "DNF5_SRC_DIR=$DNF5_SRC"
+            -v "$PODMAN_SOCK:/run/podman.sock"
+            -v "$HOME/src/claude-container/dev-scripts:/usr/local/bin/dev:ro"
+            -e "PATH=/usr/local/bin/dev:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        )
+    fi
+fi
+
+cleanup() {
+    if [[ -n "$DEV_CONTAINER" ]]; then
+        podman stop "$DEV_CONTAINER" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT INT TERM
+
 # GitHub fine-grained token required for gh,
 # "Public repositories (read-only)", no extra permissions
 # GIT_CONFIG_* rewrites git SSH URLs to HTTPS (no SSH keys in container)
-exec podman run -it --rm \
+podman run -it --rm \
     --security-opt label=disable \
     --sysctl net.ipv6.conf.all.disable_ipv6=1 \
     -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-1}" \
@@ -62,5 +124,6 @@ exec podman run -it --rm \
     -v "$HOME/src/claude-container/commands:/root/.claude/commands:ro" \
     -v "$HOME/.claude-container/.claude.json:/root/.claude.json" \
     -v "$HOME/.gitconfig:/root/.gitconfig:ro" \
+    "${DEV_ARGS[@]}" \
     -w "$PWD" \
     claude-code "$@"

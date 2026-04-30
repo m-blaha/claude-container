@@ -1,0 +1,7 @@
+FROM ghcr.io/rpm-software-management/dnf-ci-host
+
+ENV CCACHE_DIR=/root/.cache/ccache
+ENV CMAKE_C_COMPILER_LAUNCHER=ccache
+ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+CMD ["sleep", "infinity"]
