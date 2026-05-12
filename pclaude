@@ -89,6 +89,7 @@ if [[ "$PWD" == "$HOME/src/dnf5/"* ]]; then
         DEV_ARGS=(
             -e "DNF5_DEV_CONTAINER=$DEV_CONTAINER"
             -e "DNF5_SRC_DIR=$DNF5_SRC"
+            -e "SRC_DIR=$HOME/src"
             -v "$PODMAN_SOCK:/run/podman.sock"
             -v "$HOME/src/claude-container/dev-scripts:/usr/local/bin/dev:ro"
             -e "PATH=/usr/local/bin/dev:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

@@ -5,7 +5,21 @@ description: Test-driven bugfix workflow for dnf5 using the dev container
 You have access to a Fedora dev container with all dnf5 build dependencies.
 `dnf5-configure`, `dnf5-build`, `dnf5-test`, `dnf5-exec` are bash commands on your PATH.
 
-Follow this red-green-refactor workflow strictly. Do not skip steps.
+Execute this workflow directly — do not enter plan mode. Follow the steps strictly
+in the exact order listed. Do not skip or reorder steps.
+
+## Workflow order (mandatory)
+
+1. Understand the bug
+2. Write a reproducer (test that captures the bug)
+3. Validate test expectations against the domain model
+4. RED — build and confirm the reproducer test FAILS
+5. Evaluate alternative fix approaches, choose the best one
+6. Implement the chosen fix
+7. GREEN — build and confirm the test PASSES with the fix
+8. Regression check — run full test suite
+9. Create commits
+10. Report
 
 ## Step 1: Understand the bug
 
@@ -70,37 +84,78 @@ dnf5-build
 dnf5-test -R test_bugname
 ```
 
-### Option B: Ad-hoc reproducer with built binary
+### Option B: Behavioral test (ci-dnf-stack)
 
 When the bug requires a full dnf5 invocation (transaction handling, CLI behavior,
-repo interaction, etc.):
+repo interaction, etc.), write a Behave scenario in ci-dnf-stack.
 
-1. Create test packages in the dev container:
+The ci-dnf-stack repo is at `$SRC_DIR/ci-dnf-stack/` and uses git worktrees (same
+layout as dnf5). Read existing `.feature` files in `main/dnf-behave-tests/dnf/` for
+patterns and available step definitions (in `dnf-behave-tests/dnf/steps/`).
 
-```bash
-dnf5-exec bash -c 'mkdir -p /tmp/repro/specs'
-```
-
-Write spec files, then build:
+1. Create a new worktree for this bug (use the bug/issue ID as the branch name):
 
 ```bash
-dnf5-exec rpmbuild --define "_topdir /tmp/repro/build" -bb /tmp/repro/specs/pkg.spec
-dnf5-exec createrepo_c /tmp/repro/build/RPMS/
+git -C $SRC_DIR/ci-dnf-stack/main worktree add \
+    $SRC_DIR/ci-dnf-stack/<bug-id> -b <bug-id>
 ```
 
-2. Run the built dnf5 binary against the crafted repo:
+2. Ensure test fixtures are built in the new worktree:
 
 ```bash
-dnf5-exec $DNF5_SRC_DIR/build-dev/dnf5/dnf5 \
-    --installroot=/tmp/repro/root \
-    --repofrompath=testrepo,/tmp/repro/build/RPMS \
-    --disablerepo='*' --enablerepo=testrepo \
-    install problematic-package
+dnf5-exec bash -c "cd $SRC_DIR/ci-dnf-stack/<bug-id>/dnf-behave-tests && fixtures/specs/build.sh"
 ```
 
-3. Verify the bug is reproduced in the output.
+3. If you need custom test packages, create spec files in
+   `$SRC_DIR/ci-dnf-stack/<bug-id>/dnf-behave-tests/fixtures/specs/<repo-name>/`
+   and rebuild fixtures.
 
-## Step 3: Confirm the test fails (RED)
+4. Write a `.feature` file using Gherkin syntax. Example pattern:
+
+```gherkin
+Feature: Bug description
+
+Background: Set repositories
+  Given I use repository "simple-base"
+
+# <full bug URL, e.g. https://github.com/rpm-software-management/dnf5/issues/1234>
+Scenario: Describe the expected behavior
+ When I execute dnf with args "install <package>"
+ Then the exit code is 0
+  And Transaction is following
+      | Action  | Package                        |
+      | install | package-0:1.0-1.fc29.x86_64    |
+```
+
+Common steps (see `dnf-behave-tests/dnf/steps/` for all available):
+- `Given I use repository "<name>"` — activate a test repo
+- `When I execute dnf with args "<args>"` — run dnf5 with arguments
+- `Then the exit code is <N>` — check exit code
+- `And Transaction is following` — verify transaction table
+- `Then stdout contains "<text>"` / `Then stderr contains "<text>"`
+
+5. Run the scenario against the locally-built dnf5:
+
+```bash
+dnf5-exec bash -c "cd $SRC_DIR/ci-dnf-stack/<bug-id>/dnf-behave-tests && behave -Ddnf_command=$DNF5_SRC_DIR/build-dev/dnf5/dnf5 dnf/<feature_file>.feature"
+```
+
+6. Verify the bug is reproduced (test should fail before the fix).
+
+## Step 3: Validate test expectations
+
+Before running the reproducer, critically review every assertion in it. For each asserted
+value, ask: "Is this value knowable from the inputs, or am I fabricating information?"
+
+- If reusing an `@xfail`, `XFAIL`, or pre-existing failing test, treat every assertion as
+  a claim that needs justification — not as a specification to implement against.
+  Speculative tests describe what someone wished would happen, not what should happen.
+- Trace each expected value back to the concrete inputs (packages, repos, config). If you
+  cannot justify an assertion from the domain model, remove or fix it.
+- Pay special attention to values that "look right" but have no source: repo names for
+  locally-installed packages, version strings for packages that were never in a repo, etc.
+
+## Step 4: RED — confirm the reproducer test fails
 
 Run the reproducer and confirm it demonstrates the broken behavior.
 If the test passes, the reproducer doesn't capture the bug — revise it.
@@ -112,11 +167,23 @@ dnf5-test -R test_bugname
 
 Report: "Test fails as expected: [describe the failure]"
 
-## Step 4: Fix the bug
+## Step 5: Evaluate fix approaches
 
-Now fix the code. Keep the change minimal — fix only the bug, don't refactor.
+Now that the bug is confirmed and the failing test reveals the root cause, identify
+alternative ways to fix it. For each, consider:
+- Correctness: does it fully fix the bug, including edge cases?
+- Scope: how many files/components does it touch?
+- Risk: could it break existing behavior or ABI/API?
+- Maintainability: is the fix easy to understand and maintain?
 
-## Step 5: Confirm the test passes (GREEN)
+Choose the approach with the best balance of correctness, minimal scope, and lowest risk.
+Document your reasoning briefly in the final report.
+
+## Step 6: Fix the bug
+
+Implement the chosen approach. Keep the change minimal — fix only the bug, don't refactor.
+
+## Step 7: GREEN — confirm the fix makes the test pass
 
 ```bash
 dnf5-build
@@ -127,7 +194,7 @@ If it still fails, iterate on the fix. Do not proceed until the test passes.
 
 Report: "Test passes after fix."
 
-## Step 6: Run full test suite (regression check)
+## Step 8: Regression check — run full test suite
 
 ```bash
 dnf5-test
@@ -136,7 +203,7 @@ dnf5-test
 If any other tests fail, investigate whether the fix caused a regression.
 Fix regressions before reporting success.
 
-## Step 7: Create commits
+## Step 9: Create commits
 
 Create a logical set of commits. The structure depends on the reproducer approach:
 
@@ -144,10 +211,10 @@ Create a logical set of commits. The structure depends on the reproducer approac
 1. Test commit: spec files (if any) + test case
 2. Fix commit: the code change
 
-**If Option B was used (ad-hoc reproducer):**
-1. Fix commit only — include reproduction steps in the commit message body so reviewers
-   can verify the fix. Do not commit ad-hoc test files into the dnf5 repo (behavioral
-   tests belong in ci-dnf-stack).
+**If Option B was used (ci-dnf-stack behavioral test):**
+1. In the dnf5 repo: fix commit(s) only
+2. In the ci-dnf-stack worktree (`$SRC_DIR/ci-dnf-stack/<bug-id>`): commit the
+   `.feature` file and any new spec files/fixtures
 
 If the fix touches multiple independent areas, split into separate commits per area.
 
@@ -156,7 +223,11 @@ Commit message format — follow the project's existing style from `git log`. Ty
 - Blank line, then body explaining the root cause and what the fix changes
 - Reference the bug/issue if applicable
 
-## Step 8: Report
+All commits must include a Signed-off-by line from the current git user. Use `git commit -s`
+or add `Signed-off-by: <name> <email>` (from `git config user.name` / `git config user.email`)
+to the commit message.
+
+## Step 10: Report
 
 Summarize:
 - Root cause of the bug
