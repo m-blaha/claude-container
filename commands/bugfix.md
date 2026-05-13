@@ -8,7 +8,17 @@ You have access to a Fedora dev container with all dnf5 build dependencies.
 Execute this workflow directly — do not enter plan mode. Follow the steps strictly
 in the exact order listed. Do not skip or reorder steps.
 
+## Arguments
+
+The user's input may include `--attempts=N` (e.g. `--attempts=3`). This controls how
+many independent fix attempts to run in parallel. Default is 1.
+
+- `--attempts=1` (default): standard single-pass workflow
+- `--attempts=N` (N > 1): ensemble mode — run N independent attempts, then synthesize
+
 ## Workflow order (mandatory)
+
+**Standard mode (attempts=1):**
 
 1. Understand the bug
 2. Write a reproducer (test that captures the bug)
@@ -17,6 +27,19 @@ in the exact order listed. Do not skip or reorder steps.
 5. Evaluate alternative fix approaches, choose the best one
 6. Implement the chosen fix
 7. GREEN — build and confirm the test PASSES with the fix
+8. Regression check — run full test suite
+9. Create commits
+10. Report
+
+**Ensemble mode (attempts > 1):**
+
+1. Understand the bug
+2. Write a reproducer (test that captures the bug)
+3. Validate test expectations against the domain model
+4. RED — build and confirm the reproducer test FAILS
+5. Collect reproducer artifacts
+6. Parallel fix attempts (spawn N agents)
+7. Synthesize the best fix
 8. Regression check — run full test suite
 9. Create commits
 10. Report
@@ -235,3 +258,59 @@ Summarize:
 - How the bug was reproduced
 - Full test suite result
 - Commits created
+
+---
+
+# Ensemble mode steps (only when attempts > 1)
+
+Steps 1–4 are identical to standard mode. The following steps replace steps 5–10.
+
+## Ensemble step 5: Collect reproducer artifacts
+
+After confirming RED, collect everything the parallel agents will need:
+
+1. **Bug summary**: a self-contained description of the bug (expected vs actual behavior,
+   component, relevant code paths) — write it so a reader with no prior context can understand.
+2. **Reproducer files**: for each new or modified file (test cases, spec files, CMakeLists
+   changes), record the absolute path and full content.
+3. **Test filter**: the exact ctest `-R` filter or behave command that runs the reproducer.
+4. **Failing output**: the test output from step 4 showing the failure.
+
+## Ensemble step 6: Parallel fix attempts
+
+Spawn N agents in a **single message** (so they run concurrently). Use the `Agent` tool
+with `isolation: "worktree"` for each. Every agent prompt must be fully self-contained —
+agents have no context from this conversation.
+
+Each agent prompt must include:
+
+1. **Context**: the bug summary from ensemble step 5.
+2. **Reproducer files**: full file contents with paths, so the agent can recreate them.
+3. **Build instructions**: since the agent's working directory is a worktree (not the
+   original `$DNF5_SRC_DIR`), all build commands must override the source path:
+   ```
+   DNF5_SRC_DIR=$(pwd) dnf5-configure
+   DNF5_SRC_DIR=$(pwd) dnf5-build
+   DNF5_SRC_DIR=$(pwd) dnf5-test -R <test_filter>
+   ```
+4. **Task for the agent** (these are steps 5–7 of the standard workflow):
+   - Create the reproducer files
+   - Build and confirm the reproducer test FAILS (RED)
+   - Evaluate alternative fix approaches — consider correctness, scope, risk, maintainability
+   - Implement the best fix
+   - Build and confirm the reproducer test PASSES (GREEN)
+   - Report: chosen approach with reasoning, then full `git diff` output
+
+## Ensemble step 7: Synthesize the best fix
+
+After all agents complete:
+
+1. Review each agent's approach description and diff.
+2. Compare them on correctness, scope, risk, and code quality.
+3. Choose the best single approach, or combine the strongest elements from multiple
+   approaches into a single fix.
+4. Apply the chosen changes to the working tree (the original, not a worktree).
+5. Build and confirm GREEN: `dnf5-build && dnf5-test -R <test_filter>`
+
+Then continue with the standard steps 8–10 (regression check, commits, report).
+In the report, note which attempt(s) contributed to the final fix and why.
