@@ -81,13 +81,16 @@ Read changed files locally for full context.
 Apply these to every review:
 
 - **Correctness:** Logic errors, off-by-one mistakes, unhandled edge cases, race conditions.
-- **Security:** Injection vulnerabilities (SQL, command, XSS), hardcoded secrets, unsafe deserialization, improper input validation, path traversal.
+- **Security:** Injection vulnerabilities, hardcoded secrets, unsafe deserialization, improper input validation, path traversal.
 - **Error handling:** Swallowed exceptions, empty catch blocks, missing cleanup on error paths. Resources (file handles, connections, child processes) must be released even on failure.
 - **API contract changes:** Backward-incompatible changes to public APIs, config formats, CLI flags, or wire protocols should be intentional and documented.
-- **Referenced issues:** If the PR description or commits reference issues (e.g. `Fixes #123`, `Closes #456`), fetch and read them using `gh issue view`. Verify the changes correctly and completely address each one.
+- **Referenced issues:** If the PR description or commits reference issues, fetch and read them. Verify the changes correctly and completely address each one.
+  - GitHub issues (e.g. `Fixes #123`, `Closes #456`, `Resolves owner/repo#789`): fetch using `gh issue view`.
+  - Bugzilla bugs (full URLs like `https://bugzilla.redhat.com/show_bug.cgi?id=12345`, or shorthand like `RHBZ#12345`): fetch using WebFetch. For shorthand references, construct the full URL as `https://bugzilla.redhat.com/show_bug.cgi?id=<number>`. Extract the bug summary, description, status, and key comments.
 - **Test coverage:** New behavior should have tests. Changed behavior should update existing tests.
 - **Documentation:** User-visible changes (new commands, options, config keys, behavior changes) should be reflected in docs.
 - **Commit messages:** Clear, descriptive, explain "why" when the reason isn't obvious from the diff.
+- **Commit structure:** Each commit should be a single, self-contained logical change. Don't mix unrelated changes in one commit (e.g. a refactor and a bug fix, or a feature and a formatting cleanup). The project must remain in a buildable and functional state after every commit — no commit should leave broken intermediate states that are "fixed up" in a later commit. If a change is large, it should be split into a logical sequence of commits that each stand on their own.
 
 #### Project-specific review guidelines
 
