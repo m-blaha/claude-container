@@ -1,6 +1,6 @@
 FROM fedora:43
 
-RUN dnf install -y nodejs git clang-tools-extra curl python3 pre-commit gh podman-remote && \
+RUN dnf install -y nodejs git clang-tools-extra curl python3 pre-commit gh podman-remote git-revise git-absorb && \
     dnf clean all && \
     ln -sf /usr/bin/podman-remote /usr/bin/podman
 
