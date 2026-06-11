@@ -5,6 +5,18 @@ if [[ "$PWD" != "$HOME/src"* ]]; then
     exit 1
 fi
 
+# Scope mount to the current project, not all of ~/src.
+# For git worktrees, mount the parent that contains all worktrees + the main
+# repo's .git dir (worktrees reference it via relative gitdir pointers).
+# When PWD is ~/src itself, there's no project to mount (~/src is already
+# mounted read-only below).
+PROJECT_SUBDIR="$(echo "${PWD#$HOME/src/}" | cut -d/ -f1)"
+if [[ -n "$PROJECT_SUBDIR" && "$PROJECT_SUBDIR" != "$PWD" ]]; then
+    PROJECT_ROOT="$HOME/src/$PROJECT_SUBDIR"
+else
+    PROJECT_ROOT=""
+fi
+
 # Check for updates weekly, or build if image missing
 STAMP="$HOME/.claude-container/.last-build"
 IMAGE_EXISTS=$(podman image exists claude-code 2>/dev/null && echo 1 || echo 0)
@@ -80,7 +92,7 @@ if [[ "$PWD" == "$HOME/src/dnf5/"* ]]; then
             --security-opt label=disable \
             -e "CCACHE_BASEDIR=$DNF5_SRC" \
             -e "CCACHE_DIR=/root/.cache/ccache" \
-            -v "$HOME/src:$HOME/src" \
+            -v "$PROJECT_ROOT:$PROJECT_ROOT" \
             -v "$HOME/.cache/ccache:/root/.cache/ccache" \
             dnf5-dev >/dev/null
 
@@ -89,7 +101,6 @@ if [[ "$PWD" == "$HOME/src/dnf5/"* ]]; then
         DEV_ARGS=(
             -e "DNF5_DEV_CONTAINER=$DEV_CONTAINER"
             -e "DNF5_SRC_DIR=$DNF5_SRC"
-            -e "SRC_DIR=$HOME/src"
             -v "$PODMAN_SOCK:/run/podman.sock"
             -v "$HOME/src/claude-container/dev-scripts:/usr/local/bin/dev:ro"
             -e "PATH=/usr/local/bin/dev:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -120,7 +131,8 @@ podman run -it --rm \
     -e "GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf" \
     -e "GIT_CONFIG_VALUE_0=git@github.com:" \
     -v "$HOME/.config/gcloud/application_default_credentials.json:/root/.config/gcloud/application_default_credentials.json:ro" \
-    -v "$HOME/src:$HOME/src" \
+    ${PROJECT_ROOT:+-v "$PROJECT_ROOT:$PROJECT_ROOT"} \
+    -v "$HOME/src:$HOME/src:ro" \
     -v "$HOME/.claude-container:/root/.claude" \
     -v "$HOME/src/claude-container/commands:/root/.claude/commands:ro" \
     -v "$HOME/.claude-container/.claude.json:/root/.claude.json" \
