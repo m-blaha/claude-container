@@ -87,6 +87,7 @@ Apply these to every review:
 - **Referenced issues:** If the PR description or commits reference issues, fetch and read them. Verify the changes correctly and completely address each one.
   - GitHub issues (e.g. `Fixes #123`, `Closes #456`, `Resolves owner/repo#789`): fetch using `gh issue view`.
   - Bugzilla bugs (full URLs like `https://bugzilla.redhat.com/show_bug.cgi?id=12345`, or shorthand like `RHBZ#12345`): fetch using WebFetch. For shorthand references, construct the full URL as `https://bugzilla.redhat.com/show_bug.cgi?id=<number>`. Extract the bug summary, description, status, and key comments.
+- **Minimality:** The implementation should be the simplest approach that solves the problem. Flag unnecessary abstractions, over-engineering, speculative generality, or code that addresses hypothetical future requirements rather than the actual task.
 - **Test coverage:** New behavior should have tests. Changed behavior should update existing tests.
 - **Documentation:** User-visible changes (new commands, options, config keys, behavior changes) should be reflected in docs.
 - **Commit messages:** Clear, descriptive, explain "why" when the reason isn't obvious from the diff.
