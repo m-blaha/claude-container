@@ -49,6 +49,17 @@ gh pr diff $PR_NUMBER --repo <owner/repo>
 
 If you need the full content of a changed file, fetch it via the GitHub API.
 
+#### 2c. **Read existing reviews and comments**
+
+After fetching the PR changes (via either 2a or 2b), read any existing review comments and reviews on the PR:
+```
+gh api repos/<owner/repo>/pulls/$PR_NUMBER/reviews
+gh api repos/<owner/repo>/pulls/$PR_NUMBER/comments
+gh api repos/<owner/repo>/issues/$PR_NUMBER/comments
+```
+
+Use existing feedback as additional context for your review. Note which issues have already been identified and whether they were resolved. Still report all problems you find in your review, even if they overlap with existing comments — the user wants a complete picture in one output.
+
 
 ---
 
