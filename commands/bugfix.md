@@ -282,10 +282,15 @@ Spawn N agents in a **single message** (so they run concurrently). Use the `Agen
 with `isolation: "worktree"` for each. Every agent prompt must be fully self-contained —
 agents have no context from this conversation.
 
+The worktree already contains the reproducer files (committed or staged before spawning).
+Agents do NOT need to build or run tests — RED was confirmed in step 4, and GREEN will
+be verified once on the final synthesized fix in step 7.
+
 Each agent prompt must include:
 
 1. **Context**: the bug summary from ensemble step 5.
-2. **Reproducer files**: full file contents with paths, so the agent can recreate them.
+2. **Reproducer info**: the reproducer file paths, the failing test output, and the test
+   filter — so the agent understands what the test checks and how it fails.
 3. **Build instructions**: since the agent's working directory is a worktree (not the
    original `$DNF5_SRC_DIR`), all build commands must override the source path:
    ```
@@ -293,24 +298,56 @@ Each agent prompt must include:
    DNF5_SRC_DIR=$(pwd) dnf5-build
    DNF5_SRC_DIR=$(pwd) dnf5-test -R <test_filter>
    ```
-4. **Task for the agent** (these are steps 5–7 of the standard workflow):
-   - Create the reproducer files
-   - Build and confirm the reproducer test FAILS (RED)
+   These are for reference only — agents should NOT run them.
+4. **Task for the agent**:
+   - Read the reproducer files and the relevant source code
    - Evaluate alternative fix approaches — consider correctness, scope, risk, maintainability
-   - Implement the best fix
-   - Build and confirm the reproducer test PASSES (GREEN)
+   - Implement the best fix (do NOT build or test — just write the code)
    - Report: chosen approach with reasoning, then full `git diff` output
+   - As the very last step: `touch /tmp/fix-attempt-<SID>-<N>-done` (where `<SID>` is
+     a session ID and `<N>` is the attempt number, 1-based)
+
+Before spawning agents, generate a short random session ID and clean up any stale markers:
+
+```bash
+SID=$(head -c4 /dev/urandom | xxd -p)
+rm -f /tmp/fix-attempt-*-done
+```
+
+Include the `SID` value in each agent's prompt so they use the same session ID.
+
+**After spawning all agents: STOP.** Do not continue working, do not implement any fix
+yourself, do not proceed to step 7. Ignore `<task-notification>` messages — they may
+arrive before agents actually finish. Instead, poll for marker files:
+
+```bash
+ls /tmp/fix-attempt-<SID>-*-done 2>/dev/null | wc -l
+```
+
+Repeat every 30 seconds until the count equals N (the number of attempts). Only then
+proceed to step 7.
 
 ## Ensemble step 7: Synthesize the best fix
 
-After all agents complete:
+After all marker files are present (all agents truly complete):
 
 1. Review each agent's approach description and diff.
 2. Compare them on correctness, scope, risk, and code quality.
 3. Choose the best single approach, or combine the strongest elements from multiple
    approaches into a single fix.
 4. Apply the chosen changes to the working tree (the original, not a worktree).
-5. Build and confirm GREEN: `dnf5-build && dnf5-test -R <test_filter>`
+5. Clean up worktrees and marker files:
+   ```bash
+   git worktree prune
+   rm -f /tmp/fix-attempt-*-done
+   ```
+   Then remove any leftover worktree directories and branches:
+   ```bash
+   git worktree list  # identify stale worktrees
+   # for each stale worktree: git worktree remove <path>
+   # for each stale branch: git branch -D <branch>
+   ```
+6. Build and confirm GREEN: `dnf5-build && dnf5-test -R <test_filter>`
 
 Then continue with the standard steps 8–10 (regression check, commits, report).
 In the report, note which attempt(s) contributed to the final fix and why.
